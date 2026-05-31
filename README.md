@@ -1,122 +1,105 @@
 # UNIQA Conversion Coach
 
-Live Chrome extension + coach API + Playwright persona runner for baseline-vs-coach evaluation on the real UNIQA calculator.
+Chrome extension + Coach API that shows conversion-coaching prompts on the live UNIQA health insurance calculator.
 
-**Submission:** [`submissions/4Thrives/`](submissions/4Thrives/) (report, hypotheses, results, demo guide)
+This README is only for judges who want to run the project and see the demo.
 
-## For hackathon judges
+## What You Need
 
-Bare minimum to see the product working locally. Precomputed eval metrics are in [`submissions/4Thrives/extras/results/`](submissions/4Thrives/extras/results/) — you do not need to run the pipeline to review our numbers.
+- Node.js 22+ and npm
+- Docker or Docker Desktop
+- Google Chrome
+- Ollama, for the local LLM model
 
-### 1. One-time setup
+## Run The Local Demo
+
+Set up the project:
 
 ```bash
-npm install
-python3 -m pip install -r requirements-pipeline.txt
-python3 -m playwright install chromium
+git clone <repo-url>
+cd github_version
 cp .env.example .env
+npm install
 ```
 
-Requires Node.js, Python 3, Docker (Postgres), and Chrome.
-
-### 2. Ollama (default persona LLM)
-
-Install [Ollama](https://ollama.com), then:
+Start Ollama and pull the local model:
 
 ```bash
 ollama serve
 ollama pull qwen2.5:3b-instruct
 ```
 
-`.env` already uses `LLM_PROVIDER=local` and `http://localhost:11434`. For cloud LLM instead, set `LLM_PROVIDER=remote` and the Featherless keys in `.env.example`.
+Keep Ollama running. The default `.env.example` is already configured to use:
 
-Ollama is only required for **automated** persona runs; manual extension testing does not need it.
+```text
+LLM_PROVIDER=local
+LLM_API_URL=http://localhost:11434/v1/chat/completions
+LLM_MODEL=qwen2.5:3b-instruct
+```
 
-### 3. Start backend
-
-Terminal A:
+Start the local database and Coach API:
 
 ```bash
-npm run db:up && npm run db:migrate
+npm run db:up
+npm run db:migrate
 npm run dev:coach-api
 ```
 
-Verify: `curl http://127.0.0.1:8787/healthz`
+Keep this terminal open. The API should run at:
 
-### 4. Load the Chrome extension
+```text
+http://127.0.0.1:8787
+```
+
+In another terminal, build the Chrome extension:
 
 ```bash
 npm run build:extension
 ```
 
-Chrome → **Extensions** → **Developer mode** → **Load unpacked** → select `extension/dist`.
+Load the extension in Chrome:
 
-Open the [UNIQA health calculator](https://www.uniqa.at/krankenversicherung/rechner) and walk through a Start or Optimal path (private doctor, myself only). Coach popups appear at funnel steps when the API is running.
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the `extension/dist` folder.
 
-**What you should see:** the extension detects funnel stage from the live page; the coach API returns deterministic intervention plays — the LLM does not decide *when* to coach.
+Open the UNIQA calculator:
 
-## Automated evaluation (optional)
-
-### How it works
-
-Playwright opens real Chrome sessions on `uniqa.at`. Three personas (Judith, Franz, Peter) × four intentions run in **baseline** (no extension) and **coach** (extension loaded) modes. Session traces feed `evaluation/report_bulk_runs.py`, which produces conversion, drop-off, and popup charts.
-
-### Why it takes a long time
-
-- Real browser on the production site — not a mock UI
-- An LLM call per persona decision step
-- Submission minimum: **24 sessions** (12 baseline + 12 coach); full loop: 300+
-
-Coach mode requires a built extension and a healthy coach API.
-
-```bash
-npm run pipeline:submission
+```text
+https://www.uniqa.at/krankenversicherung/rechner
 ```
 
-Traces land in `artifacts/browser-runs/`; the report is copied to `submissions/4Thrives/extras/results/`.
+To see the coach popups, walk through a Start or Optimal path with:
 
-Full validation + bulk:
+- Private doctor
+- Myself only
 
-```bash
-npm run pipeline:local
+The extension should detect the current funnel step and show coaching prompts while the local Coach API is running.
+
+## If The Local Setup Is Not Working
+
+If the database or local API does not work, use the deployed Coach API instead.
+
+In `.env`, set:
+
+```text
+VITE_COACH_API_ORIGIN=https://coach-api-42il2.ondigitalocean.app/
 ```
 
-Optional overrides: `LOCAL_VALIDATE_SESSIONS`, `LOCAL_BULK_SESSIONS`, `EXPERIMENT_PREFIX`.
-
-**Regenerate report** from existing traces (s8 relabel, no rerun):
+Then rebuild the extension:
 
 ```bash
-python3 scripts/patch_s8_trace_outcomes.py artifacts/browser-runs/local-bulk-baseline-* artifacts/browser-runs/local-bulk-coach-*
-python3 evaluation/report_bulk_runs.py --baseline artifacts/browser-runs/<baseline-dir> --coach artifacts/browser-runs/<coach-dir> --output-dir artifacts/reports/final_run
-cp -r artifacts/reports/final_run/* submissions/4Thrives/extras/results/
+npm install
+npm run build:extension
 ```
 
-Online conversion in reports = in-scope journey reaching `s8_confirm` (Start/Optimal, private doctor, myself only). The runner observes but does not submit the Berateranfrage form.
+Load `extension/dist` in Chrome again and open the UNIQA calculator. The extension will call the deployed API instead of `http://127.0.0.1:8787`.
 
-## Repo layout
+## Submission Materials
 
-| Path | Role |
-|------|------|
-| `extension/` | Live funnel detection + coach UI on uniqa.at |
-| `coach-api/` | Deterministic `/api/runtime/*` decision API |
-| `browser-runner/` | Playwright personas (Judith, Franz, Peter) |
-| `evaluation/` | Metrics + `report_bulk_runs.py` |
-| `shared/` | Runtime contracts |
+The final report, hypotheses, demo guide, and precomputed results are in:
 
-`admin-portal/` is legacy and not required for the MVP path.
-
-## Developers
-
-**API:** `POST /api/runtime/decide`, `POST /api/runtime/outcome`, `GET /api/runtime/sessions/:id`, `GET /healthz`
-
-**Test:**
-
-```bash
-npm test
-python3 -m unittest \
-  browser-runner/tests/test_run_batch.py \
-  evaluation/tests/test_metrics.py \
-  evaluation/tests/test_report_bulk_runs.py
+```text
+submissions/4Thrives/
 ```
-
-**Deploy:** Coach API on DigitalOcean — [Dockerfile](Dockerfile), [.do/app.yaml](.do/app.yaml)
